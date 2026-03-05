@@ -122,3 +122,11 @@ u64 GetOSTimerFrequency(void)
     QueryPerformanceFrequency(&Result);
     return Result.QuadPart;
 }
+
+
+// Memory
+//
+void *os_page_alloc(u64 size)
+{
+    return VirtualAlloc(NULL, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+}

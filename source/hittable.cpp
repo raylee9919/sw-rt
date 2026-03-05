@@ -22,3 +22,134 @@ Hittable_Tri::Hittable_Tri(Vec3 origin_, Vec3 u_, Vec3 v_)
     d = dot(normal, origin);
     w = n / dot(n, n);
 }
+
+bool rt_hit_quad(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* rec_out)
+{
+    auto& quad = hittable.quad;
+
+    f32 denom = dot(quad.normal, ray.direction);
+    if (fabs(denom) < 1e-8) {
+        return false;
+    }
+
+    f32 t = (quad.d - dot(quad.normal, ray.origin)) / denom;
+    if (t < t_min || t > t_max) {
+        return false;
+    }
+
+    Vec3 hit_pos = ray.origin + ray.direction * t;
+
+    Vec3 p = hit_pos - quad.origin;
+    f32 alpha = dot(quad.w, cross(p, quad.v));
+    f32 beta  = dot(quad.w, cross(quad.u, p));
+
+    if (!(alpha >= 0.f && alpha <= 1.f && beta >= 0.f && beta <= 1.f)) {
+        return false;
+    }
+
+    Vec3 normal = quad.normal;
+    if (dot(normal, ray.direction) > 0.f) {
+        normal = -normal;
+    }
+
+    rec_out->t = t;
+    rec_out->position = hit_pos;
+    rec_out->normal = normal;
+    rec_out->uv = Vec2(alpha, beta);
+    rec_out->material = hittable.material;
+
+    return true;
+}
+
+bool rt_hit_tri(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* rec_out)
+{
+    auto& tri = hittable.tri;
+
+    f32 denom = dot(tri.normal, ray.direction);
+    if (fabs(denom) < 1e-8) {
+        return false;
+    }
+
+    f32 t = (tri.d - dot(tri.normal, ray.origin)) / denom;
+    if (t < t_min || t > t_max) {
+        return false;
+    }
+
+    Vec3 hit_pos = ray.origin + ray.direction * t;
+
+    Vec3 p = hit_pos - tri.origin;
+    f32 alpha = dot(tri.w, cross(p, tri.v));
+    f32 beta  = dot(tri.w, cross(tri.u, p));
+
+    if (!(alpha >= 0.f && alpha <= 1.f && beta >= 0.f && beta <= 1.f && (alpha + beta <= 1.f))) {
+        return false;
+    }
+
+    Vec3 normal = tri.normal;
+    if (dot(normal, ray.direction) > 0.f) {
+        normal = -normal;
+    }
+
+    rec_out->t = t;
+    rec_out->position = hit_pos;
+    rec_out->normal = normal;
+    rec_out->uv = Vec2(alpha, beta);
+    rec_out->material = hittable.material;
+
+    return true;
+}
+
+bool rt_hit_bvh(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record *rec_out)
+{
+    auto& bvh = hittable.bvh;
+    Hittable *primitives = bvh.primitives;
+
+    bool hit = false;
+
+    std::stack <BVH_Node *> stk;
+    stk.push(bvh.root);
+
+    f32 min_t = f32_max;
+
+    while (!stk.empty()) {
+        auto *node = stk.top();
+        stk.pop();
+
+        if (!ray_aabb_intersect(ray, node->box)) {
+            continue;
+        }
+
+        if (is_leaf(node)) {
+            // @Temporary: Closest hit
+            //
+            Hit_Record rec;
+            bool did_hit = rt_hit(primitives[node->index], ray, t_min, t_max, &rec);
+            if (did_hit && (rec.t < min_t)) {
+                min_t = rec.t;
+                *rec_out = rec;
+                hit = true;
+            }
+        } else {
+            stk.push(node->left);
+            if (node->left != node->right) {
+                stk.push(node->right);
+            }
+        }
+    }
+
+    return hit;
+}
+
+bool rt_hit(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* rec_out) 
+{
+    switch (hittable.kind) {
+        case HITTABLE_QUAD:     return rt_hit_quad(hittable, ray, t_min, t_max, rec_out);
+        case HITTABLE_TRIANGLE: return rt_hit_tri(hittable, ray, t_min, t_max, rec_out);
+        case HITTABLE_BVH:      return rt_hit_bvh(hittable, ray, t_min, t_max, rec_out);
+
+        default: {
+            assert(!"Invalid default case.");
+            return false;
+        } break;
+    }
+}

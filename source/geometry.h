@@ -2,29 +2,30 @@
 
 #pragma once
 
-// There are two kinds of nodes in BVH - leaf node and internal node.
-// Order of children doesn't matter in BVH.
+struct Ray {
+    Vec3 origin;
+    Vec3 direction;
+
+    explicit Ray() = default;
+    explicit Ray(Vec3 o, Vec3 d);
+};
 
 struct AABB {
     Vec3 min;
     Vec3 max;
+
+    explicit AABB() = default;
+    explicit AABB(AABB a, AABB b);
 };
 
-struct Triangle_Mesh {
-    u32 num;
-    Vec3 *vertices;
-    Vec3 *normals;
+struct Index_AABB {
+    u32 index;
+    AABB box;
 };
 
 struct BVH_Node {
-    BVH_Node *left;
-    BVH_Node *right;
+    BVH_Node* left;
+    BVH_Node* right;
+    int index;
+    AABB box;
 };
-
-struct BVH {
-    BVH_Node* nodes;
-    u32 num_nodes;
-};
-
-AABB union(AABB l, AABB r);
-f32 area(AABB box);

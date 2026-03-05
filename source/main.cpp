@@ -1,16 +1,20 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include <vector>
+#include <stack>
 
 // .h
 //
 #include "base.h"
 #include "win32.h"
+#include "memory.h"
+#include "simd.h"
 #include "string.h"
 #include "math.h"
 #include "random.h"
 #include "material.h"
 #include "geometry.h"
+#include "asset.h"
 #include "hittable.h"
 #include "entity.h"
 #include "obj.h"
@@ -18,6 +22,8 @@
 //.cpp
 //
 #include "win32.cpp"
+#include "memory.cpp"
+#include "simd.cpp"
 #include "string.cpp"
 #include "math.cpp"
 #include "random.cpp"
@@ -45,6 +51,8 @@ struct Framebuffer {
 };
 
 struct State {
+    Arena           *arena;
+
     int             num_samples;
     int             max_bounces;
 
@@ -121,28 +129,6 @@ Texture *make_flat_color_texture(u32 width, u32 height, Vec4 color)
     return tex;
 }
 
-Texture *make_checker_texture(u32 width, u32 height)
-{
-    Texture *tex = new Texture;
-
-    tex->width  = width;
-    tex->height = height;
-    tex->pitch  = 4 * width;
-    tex->data   = new u8[tex->pitch * height]; 
-
-    for (u32 r = 0; r < height; ++r) {
-        for (u32 c = 0; c < width; ++c) {
-            Vec4 color = Vec4(1.f);
-            if (((r/32) + (c/32)) % 2 == 0) {
-                color = Vec4(0.2f, 0.2f, 0.2f, 1.f);
-            }
-            *(u32 *)((u8 *)tex->data + r*tex->pitch + c*4) = pack_rgba(color);
-        }
-    }
-
-    return tex;
-}
-
 Vec3 sample(Texture *tex, Vec2 uv)
 {
     u32 w = tex->width;
@@ -160,149 +146,7 @@ Vec3 sample(Texture *tex, Vec2 uv)
 
 // Ray
 //
-struct Ray {
-    Vec3 origin;
-    Vec3 direction;
-
-    Ray(Vec3 o, Vec3 d) {
-        origin = o;
-        direction = d;
-    }
-};
-
-struct Hit_Record {
-    f32 t;
-    Vec3 position;
-    Vec3 normal;
-    Vec2 uv;
-    Material material;
-};
-
-bool hit(const Hittable& hittable, const Ray& ray, const f32 t_min, const f32 t_max, Hit_Record* rec_out) 
-{
-    switch (hittable.kind) {
-        case HITTABLE_SPHERE: {
-            auto& sphere = hittable.sphere;
-            Vec3 oc = sphere.center - ray.origin;
-            f32 a = dot(ray.direction, ray.direction);
-            f32 b = dot(ray.direction, oc);
-            f32 c = dot(oc, oc) - sphere.radius * sphere.radius;
-            f32 discriminant = b*b - a*c;
-
-            if (discriminant < 0.f) {
-                return false;
-            }
-
-            f32 t = (b - sqrt(discriminant)) / a;
-            if (t < t_min || t > t_max) {
-                t = (b + sqrt(discriminant)) / a;
-                if (t < t_min || t > t_max) {
-                    return false;
-                }
-            }
-
-            Vec3 hit_pos = ray.origin + ray.direction * t;
-
-            Vec3 normal = normalize(hit_pos - sphere.center);
-            if (dot(normal, ray.direction) > 0.f) {
-                normal = -normal;
-            }
-
-            f32 theta = acosf(-hit_pos.y);
-            f32 phi = atan2f(-hit_pos.z, hit_pos.x) + PI;
-            Vec2 uv = Vec2(phi / (2*PI), theta / PI);
-
-            rec_out->t = t;
-            rec_out->position = hit_pos;
-            rec_out->normal = normal;
-            rec_out->uv = uv;
-            rec_out->material = hittable.material;
-
-            return true;
-        } break;
-
-        case HITTABLE_QUAD: {
-            auto& quad = hittable.quad;
-
-            f32 denom = dot(quad.normal, ray.direction);
-            if (fabs(denom) < 1e-8) {
-                return false;
-            }
-
-            f32 t = (quad.d - dot(quad.normal, ray.origin)) / denom;
-            if (t < t_min || t > t_max) {
-                return false;
-            }
-
-            Vec3 hit_pos = ray.origin + ray.direction * t;
-
-            Vec3 p = hit_pos - quad.origin;
-            f32 alpha = dot(quad.w, cross(p, quad.v));
-            f32 beta  = dot(quad.w, cross(quad.u, p));
-
-            if (!(alpha >= 0.f && alpha <= 1.f && beta >= 0.f && beta <= 1.f)) {
-                return false;
-            }
-
-            Vec3 normal = quad.normal;
-            if (dot(normal, ray.direction) > 0.f) {
-                normal = -normal;
-            }
-
-            rec_out->t = t;
-            rec_out->position = hit_pos;
-            rec_out->normal = normal;
-            rec_out->uv = Vec2(alpha, beta);
-            rec_out->material = hittable.material;
-
-            return true;
-        } break;
-
-        case HITTABLE_TRIANGLE: {
-            auto& tri = hittable.tri;
-
-            f32 denom = dot(tri.normal, ray.direction);
-            if (fabs(denom) < 1e-8) {
-                return false;
-            }
-
-            f32 t = (tri.d - dot(tri.normal, ray.origin)) / denom;
-            if (t < t_min || t > t_max) {
-                return false;
-            }
-
-            Vec3 hit_pos = ray.origin + ray.direction * t;
-
-            Vec3 p = hit_pos - tri.origin;
-            f32 alpha = dot(tri.w, cross(p, tri.v));
-            f32 beta  = dot(tri.w, cross(tri.u, p));
-
-            if (!(alpha >= 0.f && alpha <= 1.f && beta >= 0.f && beta <= 1.f && (alpha + beta <= 1.f))) {
-                return false;
-            }
-
-            Vec3 normal = tri.normal;
-            if (dot(normal, ray.direction) > 0.f) {
-                normal = -normal;
-            }
-
-            rec_out->t = t;
-            rec_out->position = hit_pos;
-            rec_out->normal = normal;
-            rec_out->uv = Vec2(alpha, beta);
-            rec_out->material = hittable.material;
-
-            return true;
-        } break;
-
-        default: {
-            assert(!"Invalid default case.");
-            return false;
-        } break;
-    }
-}
-
-Vec3 cast_ray(std::vector<Hittable>& world, const Ray& ray, const f32 t_min, const f32 t_max, const int max_bounces)
+Vec3 cast_ray(std::vector<Hittable>& world, Ray& ray, f32 t_min, f32 t_max, int max_bounces)
 {
     if (max_bounces <= 0) {
         return Vec3(0.f);
@@ -313,7 +157,7 @@ Vec3 cast_ray(std::vector<Hittable>& world, const Ray& ray, const f32 t_min, con
     rec.t = f32_max;
     for (auto& obj : world) {
         Hit_Record rec_local;
-        if (hit(obj, ray, t_min, t_max, &rec_local)) {
+        if (rt_hit(obj, ray, t_min, t_max, &rec_local)) {
             // Closest hit
             if (rec_local.t < rec.t) {
                 rec = rec_local;
@@ -425,8 +269,12 @@ void raycast_work(void *param_)
                 accumulated = accumulated + weight * cast_ray(world, ray, 0.001f, 1e8, max_bounces);
             }
 
+            // Replace NaN with zero.
+            if (accumulated.x != accumulated.x) accumulated.x = 0.f;
+            if (accumulated.y != accumulated.y) accumulated.y = 0.f;
+            if (accumulated.z != accumulated.z) accumulated.z = 0.f;
 
-            // @Todo: COLOR COLOR COLOR
+            // @Todo: Correct gamma correction
             accumulated.x = sqrt(accumulated.x);
             accumulated.y = sqrt(accumulated.y);
             accumulated.z = sqrt(accumulated.z);
@@ -460,48 +308,100 @@ int main()
     Win32_State *win32_state = new Win32_State;
     win32_init(win32_state);
 
+    // Create textures.
+    //
+    Texture *white_tex = make_flat_color_texture(1024, 1024, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+
     Entity *entity = new Entity;
     memset(entity, 0, sizeof(*entity));
     load_and_parse_obj(String("C:\\dev\\swl\\sw-rt\\monkey.obj"), &entity->mesh, &entity->aabb);
 
+    auto *mesh = &entity->mesh;
+    u32 num_tri = mesh->num / 3;
 
-    auto* mesh = &entity->mesh;
-    BVH* bl_bvh = bvh_from_triangle_mesh(mesh);
-    {
+    Vec3 translation = Vec3(0.f, 2.f, -1.f);
+
+    Hittable *triangles = new Hittable[num_tri];
+    for (u32 i = 0; i < mesh->num; i += 3) {
+        Vec3 vert1 = translation + mesh->vertices[i];
+        Vec3 vert2 = translation + mesh->vertices[i + 1];
+        Vec3 vert3 = translation + mesh->vertices[i + 2];
+        Hittable tri = {};
+        {
+            tri.kind     = HITTABLE_TRIANGLE;
+            tri.material = make_material_lambertian(white_tex, Vec3(0.3f, 0.3f, 1.0f));
+            tri.tri      = Hittable_Tri(vert1, vert2 - vert1, vert3 - vert1);
+        }
+        triangles[i / 3] = tri;
     }
 
-    state = new State;
+    AABB *boxes = new AABB[num_tri];
+    for (u32 i = 0; i < mesh->num; i += 3) {
+        Vec3 vert1 = translation + mesh->vertices[i];
+        Vec3 vert2 = translation + mesh->vertices[i + 1];
+        Vec3 vert3 = translation + mesh->vertices[i + 2];
+        f32 eps = 0.00001f;
+        f32 min_x = min(min(vert1.x, vert2.x), vert3.x) - eps;
+        f32 min_y = min(min(vert1.y, vert2.y), vert3.y) - eps;
+        f32 min_z = min(min(vert1.z, vert2.z), vert3.z) - eps;
+        f32 max_x = max(max(vert1.x, vert2.x), vert3.x) + eps;
+        f32 max_y = max(max(vert1.y, vert2.y), vert3.y) + eps;
+        f32 max_z = max(max(vert1.z, vert2.z), vert3.z) + eps;
+        u32 index = i / 3;
+        boxes[index].min.x = min_x;
+        boxes[index].min.y = min_y;
+        boxes[index].min.z = min_z;
+        boxes[index].max.x = max_x;
+        boxes[index].max.y = max_y;
+        boxes[index].max.z = max_z;
+    }
+    BVH_Node *bvh_root = create_bvh(boxes, num_tri);
+
+    Hittable hit_bvh = {};
     {
-        state->num_samples = 1; 
-        state->max_bounces = 1;
-
-        auto *buf = &state->framebuffer;
-        {
-            buf->width  = 800;
-            buf->height = 800;
-            buf->pitch = buf->width * 4;
-            buf->data = new u8[buf->pitch * buf->height];
-            memset(buf->data, 0, buf->pitch * buf->height);
-        }
-
-        {
-            auto *c = &state->camera;
-            c->position = Vec3(0.f, 4.9f, 5.f);
-            c->dir = normalize(Vec3(0.f, 5.f, 0.f) - c->position);
-            c->focal_length = 1.5f;
-            c->aspect_ratio = (f32)buf->width / (f32)buf->height;
-            c->width = 3.f;
-            c->height = c->width / c->aspect_ratio;
-        }
+        hit_bvh.kind           = HITTABLE_BVH;
+        hit_bvh.bvh.root       = bvh_root;
+        hit_bvh.bvh.primitives = triangles;
+        hit_bvh.bvh.num        = num_tri;
     }
 
 
-    Texture *white_tex   = make_flat_color_texture(1024, 1024, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-    Texture *checker_tex = make_checker_texture(1024, 1024);
 
-    // Cornell box.
-    //
+    {
+        Arena *arena = arena_alloc();
+        state = arena_push<State>(arena);
+        state->arena = arena;
+        {
+            state->num_samples = 4; 
+            state->max_bounces = 4;
+
+            auto *buf = &state->framebuffer;
+            {
+                buf->width  = 960;
+                buf->height = 960;
+                buf->pitch  = buf->width * 4;
+                buf->data   = arena_push<u8>(state->arena, buf->pitch * buf->height, CACHE_LINE);
+            }
+
+            {
+                auto *c = &state->camera;
+                c->position     = Vec3(0.f, 4.9f, 5.f);
+                c->dir          = normalize(Vec3(0.f, 5.f, 0.f) - c->position);
+                c->focal_length = 1.5f;
+                c->aspect_ratio = (f32)buf->width / (f32)buf->height;
+                c->width        = 3.f;
+                c->height       = c->width / c->aspect_ratio;
+            }
+        }
+    }
+
     auto& world = state->world;
+    world.push_back(hit_bvh);
+
+
+
+    // World.
+    //
     world.push_back(create_quad(Vec3(-5.f, 10.f, -5.f), Vec3(0.f, 0.f, 10.f), Vec3(0.f, -10.f, 0.f), make_material_lambertian(white_tex, Vec3(0.0f, 1.0f, 0.0f)))); // left green
     world.push_back(create_quad(Vec3( 5.f, 10.f, -5.f), Vec3(0.f,-10.f, 0.f), Vec3(0.f, 0.f, 10.f), make_material_lambertian(white_tex, Vec3(1.0f, 0.0f, 0.0f)))); // right red
     world.push_back(create_quad(Vec3(-5.f, 10.f, -5.f), Vec3(10.f, 0.f, 0.f), Vec3(0.f, 0.f, 10.f), make_material_lambertian(white_tex))); // top
@@ -511,17 +411,6 @@ int main()
     world.push_back(create_quad(Vec3(-2.0f, 9.995f, -2.0f), Vec3(4.f, 0.f, 0.f), Vec3(0.f, 0.f, 4.f), make_material_emission(Vec3(1.f)))); // light
 
 
-    for (u32 i = 0; i < mesh->num; i += 3) {
-        f32 scale = 1.f;
-        Vec3 vert1 = Vec3(0,2,-1) + scale * mesh->vertices[i];
-        Vec3 vert2 = Vec3(0,2,-1) + scale * mesh->vertices[i+1];
-        Vec3 vert3 = Vec3(0,2,-1) + scale * mesh->vertices[i+2];
-        Hittable tri = {};
-        tri.kind = HITTABLE_TRIANGLE;
-        tri.material = make_material_lambertian(white_tex, Vec3(0.3f, 0.3f, 1.0f));
-        tri.tri = Hittable_Tri(vert1, vert2 - vert1, vert3 - vert1);
-        world.push_back(tri);
-    }
 
 
 
@@ -553,6 +442,7 @@ int main()
         printf("Numer of tiles: %d\n", num_tiles);
 
         u64 begin = ReadOSTimer();
+        printf("Begin raytracing...\n");
         for (int tile_y = 0; tile_y < num_tiles_y; ++tile_y) {
             for (int tile_x = 0; tile_x < num_tiles_x; ++tile_x) {
                 RT_Param *param = new RT_Param;

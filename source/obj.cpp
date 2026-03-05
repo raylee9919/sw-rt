@@ -7,6 +7,7 @@
 #include "math.h"
 #include "string.h"
 #include "geometry.h"
+#include "asset.h"
 
 void load_and_parse_obj(String filename, Triangle_Mesh *mesh, AABB *aabb)
 {

@@ -1,7 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 
-u32 pcg32_rand()
+u32 pcg32()
 {
     auto *rng = &global_pcg_state;
     u64 oldstate = rng->state;
@@ -11,16 +11,21 @@ u32 pcg32_rand()
     return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
 }
 
+u32 rand_u32()
+{
+    return pcg32();
+}
+
 f32 rand_f32(f32 lo, f32 hi)
 {
-    u32 u = pcg32_rand();
+    u32 u = rand_u32();
     f32 f = ((f32)u / (f32)(u32_max));
     return f*(hi - lo) + lo;
 }
 
 f64 rand_f64(f64 lo, f64 hi)
 {
-    u32 u = pcg32_rand();
+    u32 u = rand_u32();
     f64 f = ((f64)u / (f64)(u32_max));
     return f*(hi - lo) + lo;
 }

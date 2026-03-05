@@ -1,60 +1,112 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-AABB union(AABB l, AABB r)
+Ray::Ray(Vec3 o, Vec3 d)
 {
-    f32 min_x = min(l.min.x, r.min.x);
-    f32 min_y = min(l.min.x, r.min.x);
-    f32 min_z = min(l.min.x, r.min.x);
-
-    f32 max_x = max(l.max.x, r.max.x);
-    f32 max_y = max(l.max.x, r.max.x);
-    f32 max_z = max(l.max.x, r.max.x);
+    origin = o;
+    direction = d;
 }
 
-f32 area(AABB box)
+AABB::AABB(AABB a, AABB b)
 {
-    Vec3 d = box.max - box.min;
-    return 2.f * (d.x*d.y + d.y*d.z + d.z*d.x);
+    min.x = min(a.min.x, b.min.x);
+    min.y = min(a.min.y, b.min.y);
+    min.z = min(a.min.z, b.min.z);
+
+    max.x = max(a.max.x, b.max.x);
+    max.y = max(a.max.y, b.max.y);
+    max.z = max(a.max.z, b.max.z);
 }
 
-BVH* bvh_from_triangle_mesh(Triangle_Mesh* mesh)
+int bvh_cmp(const void *l, const void *r)
 {
-    BVH* bvh = new bvh;
-    memset(bvh, 0, sizeof(*bvh));
-
-    assert(mesh_num % 3 == 0);
-    u32 num_tri = mesh->num / 3;
-
-    // Build bounding boxes from each triangle.
+    // Sort AABBs along the random axis.
     //
-    AABB* boxes = new AABB[num_tri];
-    memset(boxes, 0, sizeof(AABB)*num_tri);
+    int axis = rand_u32() % 3;
 
-    for (u32 v = 0; v < mesh->num; v += 3) {
-        Vec3 vert1 = mesh->vertices[v];
-        Vec3 vert2 = mesh->vertices[v + 1];
-        Vec3 vert3 = mesh->vertices[v + 2];
+    Index_AABB *a = (Index_AABB *)l;
+    Index_AABB *b = (Index_AABB *)r;
+    if (a->box.min.e[axis] > b->box.min.e[axis]) return  1;
+    if (a->box.min.e[axis] < b->box.min.e[axis]) return -1;
+    return 0;
+}
 
-        f32 eps = 0.001f;
-        f32 min_x = min(min(vert1.x, vert2.x), vert3.x) - eps;
-        f32 min_y = min(min(vert1.y, vert2.y), vert3.y) - eps;
-        f32 min_z = min(min(vert1.z, vert2.z), vert3.z) - eps;
-        f32 max_x = max(max(vert1.x, vert2.x), vert3.x) + eps;
-        f32 max_y = max(max(vert1.y, vert2.y), vert3.y) + eps;
-        f32 max_z = max(max(vert1.z, vert2.z), vert3.z) + eps;
+BVH_Node *create_bvh_recursive(Index_AABB* boxes, int start, int len)
+{
+    qsort(boxes + start, len, sizeof(boxes[0]), bvh_cmp);
 
-        AABB box;
-        box.min = Vec3(min_x, min_y, min_z);
-        box.max = Vec3(max_x, max_y, max_z);
+    BVH_Node *node = new BVH_Node;
 
-        boxes[v] = box;
+    if (len == 1) {
+        node->left  = NULL;
+        node->right = NULL;
+        node->index = boxes[start].index;
+        node->box   = boxes[start].box;
+        return node;
+    } 
+
+    int n = len / 2;
+    node->left  = create_bvh_recursive(boxes, start, n);
+    node->right = create_bvh_recursive(boxes, start + n, len - n);
+    node->index = -1;
+    node->box   = AABB(node->left->box, node->right->box);
+    return node;
+}
+
+BVH_Node *create_bvh(AABB *boxes, int num)
+{
+    Index_AABB *tmp = new Index_AABB[num];
+    defer(delete [] tmp);
+    for (int i = 0; i < num; ++i) {
+        tmp[i].index = i;
+        tmp[i].box   = boxes[i];
     }
 
+    BVH_Node* root = create_bvh_recursive(tmp, 0, num);
 
-    // Alloc max amount of nodes (2 * N - 1).
-    //
-    u32 max_nodes = 2*num_tri - 1;
-    bvh->num_nodes = max_nodes;
-    bvh->nodes = new BVH_Node[max_nodes];
-    memset(bvh->nodes, 0, sizeof(BVH_Node)*max_nodes);
+    return root;
+}
+
+bool is_leaf(BVH_Node *node)
+{
+    return node->index != -1;
+}
+
+bool ray_aabb_intersect(Ray& ray, AABB& box)
+{
+    Vec3 inv_dir(
+        ray.direction.x == 0.0f ? std::numeric_limits<float>::infinity() : 1.0f / ray.direction.x,
+        ray.direction.y == 0.0f ? std::numeric_limits<float>::infinity() : 1.0f / ray.direction.y,
+        ray.direction.z == 0.0f ? std::numeric_limits<float>::infinity() : 1.0f / ray.direction.z
+    );
+
+    float tmin = (box.min.x - ray.origin.x) * inv_dir.x;
+    float tmax = (box.max.x - ray.origin.x) * inv_dir.x;
+
+    if (tmin > tmax) std::swap(tmin, tmax);
+
+    float tymin = (box.min.y - ray.origin.y) * inv_dir.y;
+    float tymax = (box.max.y - ray.origin.y) * inv_dir.y;
+
+    if (tymin > tymax) std::swap(tymin, tymax);
+
+    if (tmin > tymax || tymin > tmax)
+        return false;
+
+    tmin = max(tmin, tymin);
+    tmax = min(tmax, tymax);
+
+    float tzmin = (box.min.z - ray.origin.z) * inv_dir.z;
+    float tzmax = (box.max.z - ray.origin.z) * inv_dir.z;
+
+    if (tzmin > tzmax) std::swap(tzmin, tzmax);
+
+    if (tmin > tzmax || tzmin > tmax)
+        return false;
+
+    tmin = max(tmin, tzmin);
+    tmax = min(tmax, tzmax);
+
+    // For rays (not line segments), we usually want tmax >= 0
+    // Some implementations also require tmin >= 0 (ray starts outside or on surface)
+    return tmax >= 0.0f && tmin <= tmax;
 }

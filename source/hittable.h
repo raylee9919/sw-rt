@@ -2,18 +2,13 @@
 
 #pragma once
 
+struct Hittable;
 
 enum Hittable_Kind {
     HITTABLE_INVALID = 0,
-    HITTABLE_SPHERE,
     HITTABLE_QUAD,
     HITTABLE_TRIANGLE,
     HITTABLE_BVH,
-};
-
-struct Hittable_Sphere {
-    Vec3 center;
-    f32 radius;
 };
 
 struct Hittable_Quad {
@@ -41,8 +36,9 @@ struct Hittable_Tri {
 };
 
 struct Hittable_BVH {
-    Hittable_BVH *left;
-    Hittable_BVH *right;
+    BVH_Node *root;
+    Hittable *primitives;
+    int num;
 };
 
 struct Hittable {
@@ -50,9 +46,18 @@ struct Hittable {
     Material material;
 
     union {
-        Hittable_Sphere     sphere;
-        Hittable_Quad       quad;
-        Hittable_Tri        tri;
-        Hittable_BVH        bvh_node;
+        Hittable_Quad  quad;
+        Hittable_Tri   tri;
+        Hittable_BVH   bvh;
     };
 };
+
+struct Hit_Record {
+    f32 t;
+    Vec3 position;
+    Vec3 normal;
+    Vec2 uv;
+    Material material;
+};
+
+bool rt_hit(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* rec_out);

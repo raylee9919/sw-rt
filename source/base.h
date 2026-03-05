@@ -42,6 +42,10 @@ typedef double      f64;
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define clamp(val, lo, hi) min(max((val), (lo)), (hi))
 
+#define align_up_pow2(x, b) (((x) + (b) - 1) & (~((b) - 1)))
+
+#define CACHE_LINE 64
+
 // Defer
 //
 template <typename F>
@@ -60,3 +64,10 @@ Scope_Exit<F> scope_exit_make(F f) {
 
 const f32 f32_max = 3.402823e+38f;
 const u32 u32_max = 0xffffffff;
+
+inline f32 inf32()
+{
+    union { u32 u; f32 f; } x;
+    x.u = 0x7f800000;
+    return x.f;
+}
