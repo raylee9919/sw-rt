@@ -1,5 +1,5 @@
 # Software Raytracer (WIP WIP WIP)
-![Show](data/image1.png "image1")  
+![Show](data/image1.bmp "image1")  
 
 
 ## Build
