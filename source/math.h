@@ -3,6 +3,7 @@
 #pragma once
 
 #define PI 3.1415926535897932385f
+#define RECIPROCAL_PI 0.31830988618f
 
 union Vec2 {
     struct{ f32 x, y; };

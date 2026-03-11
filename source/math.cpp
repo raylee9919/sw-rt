@@ -132,7 +132,8 @@ Vec3 lerp(Vec3 l, Vec3 r, f32 t) {
     return v;
 }
 
-Vec3 reflect(Vec3 in, Vec3 normal) {
+Vec3 reflect(Vec3 in, Vec3 normal) 
+{
     return in - 2.f*dot(in, normal)*normal;
 }
 
@@ -239,7 +240,8 @@ Mat4 identity() {
     return m;
 }
 
-Mat4 look_at_lh(Vec3 eye, Vec3 focus, Vec3 up) {
+Mat4 look_at_lh(Vec3 eye, Vec3 focus, Vec3 up) 
+{
     Vec3 z = normalize(focus - eye);
     Vec3 x = normalize(cross(z, up));
     Vec3 y = cross(x, z);
@@ -268,7 +270,9 @@ Mat4 look_at_lh(Vec3 eye, Vec3 focus, Vec3 up) {
 }
 
 // @Todo: Correct?
-Mat4 perspective(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z) {
+
+Mat4 perspective(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z) 
+{
     Mat4 m;
     f32 a = aspect_ratio;
     f32 f = 1.f / tanf(fov * 0.5f);

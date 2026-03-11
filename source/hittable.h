@@ -6,26 +6,17 @@ struct Hittable;
 
 enum Hittable_Kind {
     HITTABLE_INVALID = 0,
-    HITTABLE_QUAD,
     HITTABLE_TRIANGLE,
     HITTABLE_BVH,
-};
-
-struct Hittable_Quad {
-    Vec3 origin;
-    Vec3 u, v;
-
-    Vec3 normal;
-    f32 d;
-    Vec3 w;
-
-    explicit Hittable_Quad() = default;
-    explicit Hittable_Quad(Vec3 origin_, Vec3 u_, Vec3 v_);
 };
 
 struct Hittable_Tri {
     Vec3 origin;
     Vec3 u, v;
+
+    // order: origin, origin + u, origin + v
+    Vec2 st[3];
+    Vec4 tangents[3];
 
     Vec3 normal;
     f32 d;
@@ -43,10 +34,10 @@ struct Hittable_BVH {
 
 struct Hittable {
     Hittable_Kind kind;
-    Material material;
+
+    PBR_Mat pbr;
 
     union {
-        Hittable_Quad  quad;
         Hittable_Tri   tri;
         Hittable_BVH   bvh;
     };
@@ -55,9 +46,12 @@ struct Hittable {
 struct Hit_Record {
     f32 t;
     Vec3 position;
-    Vec3 normal;
+    Vec3 vertex_normal;
+    Vec3 sampled_normal;
     Vec2 uv;
-    Material material;
+    Vec4 tangent;
+
+    PBR_Mat pbr;
 };
 
 bool rt_hit(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* rec_out);

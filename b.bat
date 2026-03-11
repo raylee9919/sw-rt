@@ -4,7 +4,7 @@ cd "%~dp0"
 
 for %%a in (%*) do set "%%a=1"
 
-set flags_common=/nologo /Od /Zi /W4 /wd4201 /wd4505 /wd4146 /EHsc- /D_CRT_SECURE_NO_WARNINGS 
+set flags_common=/nologo /Od /Zi /W4 /wd4100 /wd4201 /wd4505 /wd4146 /wd4456 /wd4244 /EHsc- /D_CRT_SECURE_NO_WARNINGS 
 set flags_linker=/incremental:no /opt:ref
 
 if not exist build mkdir build

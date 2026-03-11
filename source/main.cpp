@@ -1,5 +1,9 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+// @Todo: 
+// 1. Tangent Space
+// 2. Sampling
+//
 #include <vector>
 #include <stack>
 
@@ -18,6 +22,7 @@
 #include "hittable.h"
 #include "entity.h"
 #include "obj.h"
+#include "vendor/stb_image.h"
 
 //.cpp
 //
@@ -27,12 +32,20 @@
 #include "string.cpp"
 #include "math.cpp"
 #include "random.cpp"
+#include "material.cpp"
 #include "geometry.cpp"
 #include "hittable.cpp"
+
+#include "vendor/mikktspace.c"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ASSERT(x) 
+#include "vendor/stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_ASSERT(x)
 #include "vendor/stb_image_write.h"
+
 
 struct Camera {
     Vec3 position;
@@ -59,89 +72,10 @@ struct State {
     Framebuffer     framebuffer;
     Camera          camera;
 
-    std::vector<Hittable> world;
+    std::vector <Hittable> world;
 };
 
 static State *state;
-
-
-Material make_material_lambertian(Texture *albedo, Vec3 tint = Vec3(1.f)) 
-{
-    Material mat = {};
-    mat.kind = MATERIAL_LAMBERTIAN;
-    mat.lambertian.albedo = albedo;
-    mat.lambertian.tint = tint;
-    return mat;
-}
-
-Material make_material_metallic(Vec3 color_, f32 fuzz_ = 0.f) 
-{
-    Material mat = {};
-    mat.kind = MATERIAL_METALLIC;
-    mat.metallic.color = color_;
-    mat.metallic.fuzz = fuzz_;
-    return mat;
-}
-
-Material make_material_emission(Vec3 color) 
-{
-    Material mat = {};
-    mat.kind = MATERIAL_EMISSION;
-    mat.emission.color = color;
-    return mat;
-}
-
-u32 pack_rgba(Vec4 RGBA) 
-{
-    u32 R = (u32)(min(max(RGBA.r, 0.f), 1.f)*255.f + 0.5f);
-    u32 G = (u32)(min(max(RGBA.g, 0.f), 1.f)*255.f + 0.5f);
-    u32 B = (u32)(min(max(RGBA.b, 0.f), 1.f)*255.f + 0.5f);
-    u32 A = (u32)(min(max(RGBA.a, 0.f), 1.f)*255.f + 0.5f);
-    u32 RGBA8 = (R | (G<<8) | (B<<16) | (A<<24));
-    return RGBA8;
-}
-
-Vec4 unpack_rgba(u32 RGBA8)
-{
-    f32 R = (f32)((RGBA8 & 0xff)) / 255.f;
-    f32 G = (f32)((RGBA8 & 0xff00) >> 8) / 255.f;
-    f32 B = (f32)((RGBA8 & 0xff0000) >> 16) / 255.f;
-    f32 A = (f32)((RGBA8 & 0xff000000) >> 24) / 255.f;
-    Vec4 RGBA = Vec4(R, G, B, A);
-    return RGBA;
-}
-
-Texture *make_flat_color_texture(u32 width, u32 height, Vec4 color)
-{
-    Texture *tex = new Texture;
-
-    tex->width  = width;
-    tex->height = height;
-    tex->pitch  = 4 * width;
-    tex->data   = new u8[tex->pitch * height]; 
-
-    for (u32 r = 0; r < height; ++r) {
-        for (u32 c = 0; c < width; ++c) {
-            *(u32 *)((u8 *)tex->data + r*tex->pitch + c*4) = pack_rgba(color);
-        }
-    }
-
-    return tex;
-}
-
-Vec3 sample(Texture *tex, Vec2 uv)
-{
-    u32 w = tex->width;
-    u32 h = tex->height;
-
-    // @Todo: Filtering
-    u32 r = (u32)(uv.y * (f32)(h - 1) + 0.5f);
-    u32 c = (u32)(uv.x * (f32)(w - 1) + 0.5f);
-
-    u32 texel = *(u32 *)((u8 *)tex->data + r*tex->pitch + c*4);
-    Vec3 result = unpack_rgba(texel).xyz;
-    return result;
-}
 
 
 // Ray
@@ -151,7 +85,6 @@ Vec3 cast_ray(std::vector<Hittable>& world, Ray& ray, f32 t_min, f32 t_max, int 
     if (max_bounces <= 0) {
         return Vec3(0.f);
     }
-
 
     Hit_Record rec = {};
     rec.t = f32_max;
@@ -165,54 +98,98 @@ Vec3 cast_ray(std::vector<Hittable>& world, Ray& ray, f32 t_min, f32 t_max, int 
         }
     }
 
-    // No hit. Returns sky color.
+    // No hit.
     if (rec.t == f32_max) {
-        //Vec3 bg_color = lerp(Vec3(1.f), Vec3(0.5f, 0.7f, 1.0f), ray.direction.y*0.5f + 0.5f);
-        Vec3 bg_color = Vec3(0.0f, 0.0f, 0.0f);
-        return bg_color;
+        Vec3 sky_color = lerp(Vec3(1.f), Vec3(0.5f, 0.7f, 1.0f), ray.direction.y*0.5f + 0.5f);
+        //sky_color = Vec3(0.1f);
+        return sky_color;
     }
 
-    // Bounce, reflectance.
-    switch (rec.material.kind) {
-        case MATERIAL_LAMBERTIAN: {
-            auto mat = rec.material.lambertian;
+    PBR_Mat pbr = rec.pbr;
 
-            Vec3 r = ray.direction;
-            Vec3 n = rec.normal;
-            Vec3 new_dir = n + rand_unit_vec3();
-            if (new_dir.x < 1e-8 && new_dir.y < 1e-8 && new_dir.z < 1e-8) {
-                new_dir = n;
-            } else {
-                new_dir = normalize(new_dir);
-            }
-            Ray new_ray(rec.position, new_dir);
-
-            Vec3 attenuation = sample(mat.albedo, rec.uv) * mat.tint;
-            return attenuation * cast_ray(world, new_ray, t_min, t_max, max_bounces - 1);
-        } break;
-        
-        case MATERIAL_METALLIC: {
-            auto mat = rec.material.metallic;
-
-            Vec3 new_dir = reflect(ray.direction, rec.normal) + rand_unit_vec3()*mat.fuzz;
-            Ray new_ray(rec.position, new_dir);
-            return mat.color * cast_ray(world, new_ray, t_min, t_max, max_bounces - 1);
-        } break;
-
-        case MATERIAL_EMISSION: {
-            auto mat = rec.material.emission;
-
-            //Vec3 new_dir = reflect(ray.direction, rec.normal);
-            //Ray new_ray(rec.position, new_dir);
-            //return mat.color + cast_ray(world, new_ray, t_min, t_max, max_bounces - 1);
-            return mat.color;
-        } break;
-
-        default: {
-            assert(!"Invalid default case.");
-            return Vec3{};
-        } break;
+    // Albedo
+    Vec3 albedo = Vec3(0.f);
+    if (pbr.albedo) {
+        albedo = sample_rgb(pbr.albedo, rec.uv);
+        // @Todo: Correct SRGB to Linear
+        albedo.x = powf(albedo.x, 2.2f);
+        albedo.y = powf(albedo.y, 2.2f);
+        albedo.z = powf(albedo.z, 2.2f);
     }
+
+    // Emission
+    Vec3 emission = Vec3(0.f);
+    if (pbr.emission) {
+        emission = sample_rgb(pbr.emission, rec.uv);
+    }
+
+    // RM
+    f32 roughness = 1.f, metallic = 0.f;
+    if (pbr.rm) {
+        Vec3 rm = sample_rgb(pbr.rm, rec.uv);
+        roughness = rm.y;
+        metallic  = rm.z;
+    }
+
+    Vec3 N = rec.vertex_normal;
+    Vec3 T = normalize(rec.tangent.xyz);
+    T = normalize(T - dot(T, N) * N);
+    Vec3 B = normalize(rec.tangent.w * cross(N, T));
+    Vec3 n = rec.sampled_normal;
+    n = normalize(T*n.x + B*n.y + N*n.z);
+
+    // Get a new ray
+    Vec3 new_dir;
+#if 0
+    do {
+        new_dir = rand_unit_vec3();
+    } while(dot(new_dir, n) <= 0.f);
+#else
+    new_dir = n + rand_unit_vec3();
+#endif
+    if (new_dir.x < 1e-8 && new_dir.y < 1e-8 && new_dir.z < 1e-8) {
+        new_dir = n;
+    } else {
+        new_dir = normalize(new_dir);
+    }
+
+    // Cook-Torrance BRDF
+    //
+    Vec3 p = rec.position;
+    Vec3 v = -ray.direction;
+    Vec3 l = new_dir;
+    Vec3 h = normalize(v + l);
+
+    f32 ndotl = max(dot(n, l), 0.f);
+    f32 ndotv = max(dot(n, v), 0.f);
+    f32 vdoth = max(dot(v, h), 0.f);
+    f32 ndoth = max(dot(n, h), 0.f);
+    f32 a = roughness * roughness;
+
+    Vec3 f0 = Vec3(0.04f);
+    f0 = lerp(f0, albedo, metallic);
+    Vec3 schlick_fresnel = f0 + (Vec3(1.f) - f0) * powf(1.f - vdoth, 5.f);
+
+    f32 a2 = a*a;
+    f32 x = ndoth * ndoth * (a2 - 1.f) + 1.f;
+    f32 ndf_ggx = (a2 * RECIPROCAL_PI) / (x*x);
+
+    f32 k = a * 0.5f;
+    f32 g1_l = ndotl / (ndotl * (1.f - k) + k);
+    f32 g1_v = ndotv / (ndotv * (1.f - k) + k);
+    f32 schlick_ggx = g1_l * g1_v;
+
+    Vec3 specular_term = (schlick_fresnel * ndf_ggx * schlick_ggx) / (4.f * max(ndotl, 0.001f) * max(ndotv, 0.001f));
+
+    Vec3 diffuse_term = albedo * RECIPROCAL_PI * (1.f - metallic) * (Vec3(1.f) - schlick_fresnel);
+
+    Vec3 brdf = diffuse_term + specular_term;
+
+
+    Ray new_ray(p + l * 1e-4f, new_dir);
+
+    // Rendering equation
+    return emission + brdf * ndotl * cast_ray(world, new_ray, t_min, t_max, max_bounces - 1);
 }
 
 struct RT_Param {
@@ -275,9 +252,9 @@ void raycast_work(void *param_)
             if (accumulated.z != accumulated.z) accumulated.z = 0.f;
 
             // @Todo: Correct gamma correction
-            accumulated.x = sqrt(accumulated.x);
-            accumulated.y = sqrt(accumulated.y);
-            accumulated.z = sqrt(accumulated.z);
+            accumulated.x = powf(accumulated.x, 1.f/2.2f);
+            accumulated.y = powf(accumulated.y, 1.f/2.2f);
+            accumulated.z = powf(accumulated.z, 1.f/2.2f);
 
             u32 *out = (u32 *)(fb->data + r * fb->pitch + c * 4);
             *out = pack_rgba(Vec4(accumulated, 1.f));
@@ -285,36 +262,24 @@ void raycast_work(void *param_)
     }
 }
 
-Hittable create_quad(Vec3 origin, Vec3 u, Vec3 v, Material mat)
-{
-    Hittable quad;
-    quad.kind = HITTABLE_QUAD;
-    quad.material = mat;
-    quad.quad = Hittable_Quad(origin, u, v);
-    return quad;
-}
-
-Hittable create_tri(Vec3 origin, Vec3 u, Vec3 v, Material mat)
-{
-    Hittable tri;
-    tri.kind = HITTABLE_TRIANGLE;
-    tri.material = mat;
-    tri.tri = Hittable_Tri(origin, u, v);
-    return tri;
-}
-
 int main() 
 {
     Win32_State *win32_state = new Win32_State;
     win32_init(win32_state);
 
+    stbi_set_flip_vertically_on_load(true);
+
     // Create textures.
     //
-    Texture *white_tex = make_flat_color_texture(1024, 1024, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    //Texture *white_tex = make_flat_color_texture(1024, 1024, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    Texture *helmet_albedo    = create_texture_from_file("data/DamagedHelmetAlbedo.jpg", TEXTURE_LAYOUT_RGB);
+    Texture *helmet_normal    = create_texture_from_file("data/DamagedHelmetNormal.jpg", TEXTURE_LAYOUT_RGB);
+    Texture *helmet_emission  = create_texture_from_file("data/DamagedHelmetEmission.jpg", TEXTURE_LAYOUT_RGB);
+    Texture *helmet_rm        = create_texture_from_file("data/DamagedHelmetRM.jpg", TEXTURE_LAYOUT_RGB); // @Temporary
 
     Entity *entity = new Entity;
     memset(entity, 0, sizeof(*entity));
-    load_and_parse_obj(String("C:\\dev\\swl\\sw-rt\\monkey.obj"), &entity->mesh, &entity->aabb);
+    load_and_parse_obj(String("data/DamagedHelmet.obj"), &entity->mesh, &entity->aabb);
 
     auto *mesh = &entity->mesh;
     u32 num_tri = mesh->num / 3;
@@ -322,15 +287,28 @@ int main()
     Vec3 translation = Vec3(0.f, 2.f, -1.f);
 
     Hittable *triangles = new Hittable[num_tri];
+    memset(triangles, 0, num_tri * sizeof(triangles[0]));
     for (u32 i = 0; i < mesh->num; i += 3) {
         Vec3 vert1 = translation + mesh->vertices[i];
         Vec3 vert2 = translation + mesh->vertices[i + 1];
         Vec3 vert3 = translation + mesh->vertices[i + 2];
+        Vec2 uv1 = mesh->uvs[i];
+        Vec2 uv2 = mesh->uvs[i + 1];
+        Vec2 uv3 = mesh->uvs[i + 2];
         Hittable tri = {};
         {
-            tri.kind     = HITTABLE_TRIANGLE;
-            tri.material = make_material_lambertian(white_tex, Vec3(0.3f, 0.3f, 1.0f));
-            tri.tri      = Hittable_Tri(vert1, vert2 - vert1, vert3 - vert1);
+            tri.kind            = HITTABLE_TRIANGLE;
+            tri.pbr.albedo      = helmet_albedo;
+            tri.pbr.normal      = helmet_normal;
+            tri.pbr.emission    = helmet_emission;
+            tri.pbr.rm          = helmet_rm;
+            tri.tri             = Hittable_Tri(vert1, vert2 - vert1, vert3 - vert1);
+            tri.tri.st[0]       = uv1;
+            tri.tri.st[1]       = uv2;
+            tri.tri.st[2]       = uv3;
+            tri.tri.tangents[0] = mesh->tangents[i];
+            tri.tri.tangents[1] = mesh->tangents[i + 1];
+            tri.tri.tangents[2] = mesh->tangents[i + 2];
         }
         triangles[i / 3] = tri;
     }
@@ -368,25 +346,25 @@ int main()
 
 
     {
-        Arena *arena = arena_alloc();
+        Arena* arena = arena_alloc();
         state = arena_push<State>(arena);
         state->arena = arena;
         {
-            state->num_samples = 4; 
-            state->max_bounces = 4;
+            state->num_samples = 64; 
+            state->max_bounces = 2;
 
             auto *buf = &state->framebuffer;
             {
-                buf->width  = 960;
-                buf->height = 960;
+                buf->width  = 640;
+                buf->height = 640;
                 buf->pitch  = buf->width * 4;
                 buf->data   = arena_push<u8>(state->arena, buf->pitch * buf->height, CACHE_LINE);
             }
 
             {
                 auto *c = &state->camera;
-                c->position     = Vec3(0.f, 4.9f, 5.f);
-                c->dir          = normalize(Vec3(0.f, 5.f, 0.f) - c->position);
+                c->position     = Vec3(-0.9f, 2.0f, 0.8f);
+                c->dir          = normalize(Vec3(0.f, 2.f, -1.0f) - c->position);
                 c->focal_length = 1.5f;
                 c->aspect_ratio = (f32)buf->width / (f32)buf->height;
                 c->width        = 3.f;
@@ -397,22 +375,6 @@ int main()
 
     auto& world = state->world;
     world.push_back(hit_bvh);
-
-
-
-    // World.
-    //
-    world.push_back(create_quad(Vec3(-5.f, 10.f, -5.f), Vec3(0.f, 0.f, 10.f), Vec3(0.f, -10.f, 0.f), make_material_lambertian(white_tex, Vec3(0.0f, 1.0f, 0.0f)))); // left green
-    world.push_back(create_quad(Vec3( 5.f, 10.f, -5.f), Vec3(0.f,-10.f, 0.f), Vec3(0.f, 0.f, 10.f), make_material_lambertian(white_tex, Vec3(1.0f, 0.0f, 0.0f)))); // right red
-    world.push_back(create_quad(Vec3(-5.f, 10.f, -5.f), Vec3(10.f, 0.f, 0.f), Vec3(0.f, 0.f, 10.f), make_material_lambertian(white_tex))); // top
-    world.push_back(create_quad(Vec3(-5.f, 0.f, -5.f), Vec3(0.f, 0.f, 10.f), Vec3(10.f, 0.f, 0.f), make_material_lambertian(white_tex))); // bottom
-    world.push_back(create_quad(Vec3(-5.f, 0.f, -5.f), Vec3(10.f, 0.f, 0.f), Vec3(0.f, 10.f, 0.f), make_material_lambertian(white_tex))); // back
-    world.push_back(create_quad(Vec3(-5.f, 0.f, 5.f), Vec3(10.f, 0.f, 0.f), Vec3(0.f, 10.f, 0.f), make_material_lambertian(white_tex))); // front
-    world.push_back(create_quad(Vec3(-2.0f, 9.995f, -2.0f), Vec3(4.f, 0.f, 0.f), Vec3(0.f, 0.f, 4.f), make_material_emission(Vec3(1.f)))); // light
-
-
-
-
 
 
 
@@ -431,8 +393,8 @@ int main()
         int tile_width  = 64;
         int tile_height = 64;
 #else
-        int tile_width  = 30000;
-        int tile_height = 30000;
+        int tile_width  = 300000;
+        int tile_height = 300000;
 #endif
         int num_tiles_x = (w + tile_width  - 1) / tile_width;
         int num_tiles_y = (h + tile_height - 1) / tile_height;
