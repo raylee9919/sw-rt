@@ -28,10 +28,10 @@ pushd build
 
 if "%debug%"=="1" (
     echo Debug build
-    call cl %flags_common% ../source/main.cpp ../source/obj.cpp /Fe:swrt.exe /link %flags_linker%
+    call cl %flags_common% ../code/main.cpp ../code/obj.cpp /Fe:swrt.exe /link %flags_linker%
 ) else (
     echo Release build
-    call cl %flags_common% ../source/main.cpp ../source/obj.cpp /Fe:swrt.exe /link %flags_linker%
+    call cl %flags_common% ../code/main.cpp ../code/obj.cpp /Fe:swrt.exe /link %flags_linker%
 )
 
 popd

@@ -16,8 +16,10 @@ struct Hittable_Tri {
 
     // order: origin, origin + u, origin + v
     Vec2 st[3];
+    Vec3 normals[3];
     Vec4 tangents[3];
 
+    // Hit test
     Vec3 normal;
     f32 d;
     Vec3 w;

@@ -50,8 +50,12 @@ bool rt_hit_tri(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* 
 
     // Normal
     // @Todo: Move this to shader.
-    Vec3 vertex_normal  = tri.normal;
-    Vec3 sampled_normal = tri.normal;
+    Vec3 n1 = tri.normals[0];
+    Vec3 n2 = tri.normals[1];
+    Vec3 n3 = tri.normals[2];
+    Vec3 vertex_normal  = normalize(n1 * (1.f - alpha - beta) + n2 * alpha + n3 * beta);
+    // @Temporary
+    Vec3 sampled_normal = vertex_normal;
     if (hittable.pbr.normal) {
         sampled_normal = sample_rgb(hittable.pbr.normal, st) * 2.f - Vec3(1.f);
     }
@@ -61,13 +65,13 @@ bool rt_hit_tri(Hittable& hittable, Ray& ray, f32 t_min, f32 t_max, Hit_Record* 
     //}
 
     // Write
-    rec_out->t        = t;
-    rec_out->position = hit_pos;
-    rec_out->vertex_normal = vertex_normal;
+    rec_out->t              = t;
+    rec_out->position       = hit_pos;
+    rec_out->vertex_normal  = vertex_normal;
     rec_out->sampled_normal = sampled_normal;
-    rec_out->uv       = st;
-    rec_out->pbr      = hittable.pbr;
-    rec_out->tangent  = tangent;
+    rec_out->uv             = st;
+    rec_out->pbr            = hittable.pbr;
+    rec_out->tangent        = tangent;
 
     return true;
 }

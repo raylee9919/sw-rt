@@ -5,6 +5,5 @@
 struct Entity {
     Vec3 position;
 
-    AABB aabb;
-    Triangle_Mesh mesh;
+    Triangle_Mesh *mesh;
 };

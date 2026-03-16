@@ -28,5 +28,5 @@ Vec3 sample_rgb(Texture *tex, Vec2 uv);
 
 u32 pack_rgba(Vec4 RGBA); 
 Vec4 unpack_rgba(u32 RGBA8);
-Texture *make_flat_color_texture(u32 width, u32 height, Vec4 color);
+Texture *create_flat_color_texture(u32 width, u32 height, Vec3 color);
 Texture *create_texture_from_file(const char *file_path);

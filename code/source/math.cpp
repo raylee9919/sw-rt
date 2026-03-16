@@ -73,6 +73,13 @@ Vec3 operator + (Vec3 l, Vec3 r) {
     return Vec3(l.x + r.x, l.y + r.y, l.z + r.z);
 }
 
+Vec3& operator += (Vec3& l, Vec3 r) {
+    l.x += r.x;
+    l.y += r.y;
+    l.z += r.z;
+    return l;
+}
+
 Vec3 operator - (Vec3 l, Vec3 r) {
     return Vec3(l.x - r.x, l.y - r.y, l.z - r.z);
 }
@@ -281,6 +288,26 @@ Mat4 perspective(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z)
     m.rows[1] = Vec4(0.f, a*f, 0.f, 0.f);
     m.rows[2] = Vec4(0.f, 0.f, far_z * fmn, -(far_z * near_z) * fmn);
     m.rows[3] = Vec4(0.f, 0.f, 1.f, 0.);
+    return m;
+}
+
+Mat4 scale(f32 f) {
+    Mat4 m = {
+        f,  0,  0,  0,
+        0,  f,  0,  0,
+        0,  0,  f,  0,
+        0,  0,  0,  1
+    };
+    return m;
+}
+
+Mat4 translation(f32 x, f32 y, f32 z) {
+    Mat4 m = {
+        1,  0,  0,  x,
+        0,  1,  0,  y,
+        0,  0,  1,  z,
+        0,  0,  0,  1
+    };
     return m;
 }
 

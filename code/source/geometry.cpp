@@ -21,7 +21,7 @@ int bvh_cmp(const void *l, const void *r)
 {
     // Sort AABBs along the random axis.
     //
-    int axis = rand_u32() % 3;
+    int axis = 0;
 
     Index_AABB *a = (Index_AABB *)l;
     Index_AABB *b = (Index_AABB *)r;

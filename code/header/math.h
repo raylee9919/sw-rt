@@ -76,6 +76,7 @@ Vec2 operator * (Vec2 l, Vec2 r);
 f32 dot(Vec2 l, Vec2 r);
 
 Vec3 operator + (Vec3 l, Vec3 r);
+Vec3& operator += (Vec3& l, Vec3 r);
 Vec3 operator - (Vec3 l, Vec3 r);
 Vec3& operator - (Vec3& v, f32 f);
 Vec3 operator * (Vec3 v, f32 f);

@@ -1,23 +1,17 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-void win32_init(Win32_State *ws)
+// Initialize
+//
+void os_init(OS_State *s)
 {
-    memset(ws, 0, sizeof(*ws));
+    s->rcp_qpc_freq = (1.f / (f32)os_qpc_freq());
 
-    HMODULE lib = LoadLibraryA("advapi32.dll");
-    RtlGenRandom = (_RtlGenRandom_ *)GetProcAddress(lib, "SystemFunction036");
-
-    ws->rec_qpc_freq = (1.f / (f32)GetOSTimerFrequency());
-
-    InitWorkQueue(&ws->work_queue, GetLogicalCoreCount());
+    InitWorkQueue(&s->work_queue, os_get_num_logical_cores());
 }
 
-void win32_rand(void *out, u32 bytes)
-{
-    RtlGenRandom(out, bytes);
-}
-
-u32 GetLogicalCoreCount(void) 
+// System Info.
+//
+u32 os_get_num_logical_cores(void) 
 {
     SYSTEM_INFO sys_info = {};
     GetSystemInfo(&sys_info);
@@ -25,11 +19,13 @@ u32 GetLogicalCoreCount(void)
     return core_count;
 }
 
+// Work Queue
+//
 void AddWork(Work_Queue *Queue, Work_Callback *Callback, void *Param) 
 {
     // @Note: We have a single producer atm. We gonna have to switch to cmpxchg 
     //        if we want mpmc, ultimately.
-
+    //
     u32 Index = Queue->IndexToWrite;
     u32 NewWriteIndex = (Queue->IndexToWrite + 1) % array_count(Queue->Works);
 
@@ -109,18 +105,18 @@ void InitWorkQueue(Work_Queue *Queue, u32 CoreCount)
 
 // Timer
 //
-u64 ReadOSTimer(void)
+u64 os_qpc(void)
 {
-    LARGE_INTEGER Result;
-    QueryPerformanceCounter(&Result);
-    return Result.QuadPart;
+    LARGE_INTEGER i;
+    QueryPerformanceCounter(&i);
+    return i.QuadPart;
 }
 
-u64 GetOSTimerFrequency(void)
+u64 os_qpc_freq(void)
 {
-    LARGE_INTEGER Result;
-    QueryPerformanceFrequency(&Result);
-    return Result.QuadPart;
+    LARGE_INTEGER i;
+    QueryPerformanceFrequency(&i);
+    return i.QuadPart;
 }
 
 
@@ -129,4 +125,11 @@ u64 GetOSTimerFrequency(void)
 void *os_page_alloc(u64 size)
 {
     return VirtualAlloc(NULL, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+}
+
+void *os_heap_alloc(u64 size)
+{
+    HANDLE default_heap = GetProcessHeap();
+    void *ptr = HeapAlloc(default_heap, HEAP_ZERO_MEMORY, size);
+    return ptr;
 }

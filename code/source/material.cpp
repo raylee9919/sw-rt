@@ -20,18 +20,52 @@ Vec4 unpack_rgba(u32 RGBA8)
     return RGBA;
 }
 
-Texture *make_flat_color_texture(u32 width, u32 height, Vec4 color)
+Texture *create_flat_color_texture(u32 width, u32 height, Vec3 color)
 {
     Texture *tex = new Texture;
 
+    tex->layout = TEXTURE_LAYOUT_RGB;
     tex->width  = width;
     tex->height = height;
-    tex->pitch  = 4 * width;
+    tex->pitch  = 3 * width;
     tex->data   = new u8[tex->pitch * height]; 
 
     for (u32 r = 0; r < height; ++r) {
         for (u32 c = 0; c < width; ++c) {
-            *(u32 *)((u8 *)tex->data + r*tex->pitch + c*4) = pack_rgba(color);
+            u8 R = (u8)(color.x * 255.f + 0.5f);
+            u8 G = (u8)(color.y * 255.f + 0.5f);
+            u8 B = (u8)(color.z * 255.f + 0.5f);
+            u8 *ptr = (u8 *)tex->data + r*tex->pitch + c*3;
+            ptr[0] = R;
+            ptr[1] = G;
+            ptr[2] = B;
+        }
+    }
+
+    return tex;
+}
+
+Texture *create_checker_texture(u32 width, u32 height)
+{
+    Texture *tex = new Texture;
+
+    tex->layout = TEXTURE_LAYOUT_RGB;
+    tex->width  = width;
+    tex->height = height;
+    tex->pitch  = 3 * width;
+    tex->data   = new u8[tex->pitch * height]; 
+
+    for (u32 r = 0; r < height; ++r) {
+        for (u32 c = 0; c < width; ++c) {
+            u8 color = 0xff;
+            if ((r/128 + c/128) % 2 == 0) {
+                color = 0x00;
+            }
+
+            u8 *ptr = (u8 *)tex->data + r*tex->pitch + c*3;
+            ptr[0] = color;
+            ptr[1] = color;
+            ptr[2] = color;
         }
     }
 
