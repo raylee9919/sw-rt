@@ -1,4 +1,4 @@
-# Software Raytracer (WIP WIP WIP)
+# Software Raytracer
 ![Show](data/knight.bmp "knight_image")  
 
 
